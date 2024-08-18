@@ -26,10 +26,10 @@ To stop bot press Ctrl+c in your terminal
 ## How to use this telegram bot
 Use /help or /start to display help message. \
 Send video to bot to get Video message **(aka circle)** \
-If video weight and height isn't equal, you should cut area where yout
+If the weight and height of the video are not equal, you should crop the area where you want to place the video message.
 
 ## Support
-Monero/XMR:`8BnPQDMFf8yBUg33ZuEVyFHmgYUufcRyaUpRXDXvmsca3HcKHt6tM3oBJULmDnwQELFx3mDkkjcyMezhnNcpqvMsU86zRHJ`
+Monero:`8BnPQDMFf8yBUg33ZuEVyFHmgYUufcRyaUpRXDXvmsca3HcKHt6tM3oBJULmDnwQELFx3mDkkjcyMezhnNcpqvMsU86zRHJ`
 
 
 ## License
