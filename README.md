@@ -8,7 +8,7 @@ $ git clone https://github.com/flaclover/viesbot
 $ cargo build --release
 ```
 ### Or
-Download binary from [release page](https://github.com/flaclover/viesbot)
+Download binary from [release page](https://github.com/flaclover/viesbot/releases)
 
 ### Dependencies
 For proper usage you need ffmpeg (for all platforms) and OpenSSL (if you don't use windows) installed (at least ffmpeg 2.0  required)
