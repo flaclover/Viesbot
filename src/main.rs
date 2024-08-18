@@ -238,7 +238,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         get_me.id,
     );
 
-    // Message handler for video documents
+    // Message handler for commands
     let command_handler = Update::filter_message()
         .filter_command::<Command>()
         .branch(endpoint(start_help_handler));
