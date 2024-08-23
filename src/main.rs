@@ -101,8 +101,87 @@ async fn download_video_as_file(bot: &Bot, video: &Video) -> Result<PathBuf, Dow
     Ok(download_path)
 }
 
+async fn video_preccessing_error(bot: Bot, message: Message) -> Result<(), teloxide::RequestError> {
+    bot.send_message(message.chat.id, "*Ошибка при обработке видео\\!*")
+        .parse_mode(ParseMode::MarkdownV2)
+        .await?;
+
+    Ok(())
+}
+
+async fn handle_square_video_download(
+    bot: Bot,
+    message: Message,
+    download_result: Result<PathBuf, DownloadError>,
+) -> Result<(), teloxide::RequestError> {
+    match download_result {
+        Ok(download_path) => {
+            info!(
+                "File downloaded successfully to {}",
+                download_path.display()
+            );
+            let input_file = InputFile::file(&download_path);
+            bot.send_video_note(message.chat.id, input_file).await?;
+            info!("Video note sent successfully sent.");
+            match fs::remove_file(&download_path).await {
+                Ok(_) => info!("File successfully removed"),
+                Err(err) => error!("Failed to remove file: {}", err),
+            };
+            send_donation_message(bot, message.chat.id).await?;
+        }
+        Err(err) => {
+            error!("Failed to download file: {:?}", err);
+            video_preccessing_error(bot, message).await?;
+        }
+    }
+    Ok(())
+}
+
+async fn handle_non_square_video_download(
+    bot: Bot,
+    message: Message,
+    download_result: Result<PathBuf, DownloadError>,
+) -> Result<(), teloxide::RequestError> {
+    match download_result {
+        Ok(download_path) => {
+            info!(
+                "File downloaded successfully to {}",
+                download_path.display()
+            );
+            match make_square_video(&download_path, VIDEO_NOTE_SIDELENGHT).await {
+                Ok(square_video_path) => {
+                    info!("Square video path: {}", square_video_path.display());
+
+                    // Now upload the downloaded file as a video note
+                    let input_file = InputFile::file(&square_video_path);
+                    bot.send_video_note(message.chat.id, input_file).await?;
+                    info!("Video note sent successfully.");
+
+                    send_donation_message(bot, message.chat.id).await?;
+
+                    match fs::remove_file(&square_video_path).await {
+                        Ok(_) => info!("File successfully removed"),
+                        Err(err) => error!("{}", err),
+                    };
+                }
+                Err(err) => {
+                    error!("Failed to create square video: {:?}", err);
+                    video_preccessing_error(bot, message).await?;
+                }
+            }
+
+            return Ok(());
+        }
+        Err(err) => {
+            error!("Error occurred when downloading file: {}", err);
+            video_preccessing_error(bot, message).await?;
+        }
+    }
+    Ok(())
+}
+
 async fn video_handler(bot: Bot, message: Message) -> Result<(), teloxide::RequestError> {
-    if let Some(video) = message.video() {
+    if let Some(video) = message.clone().video() {
         // Check if the video meets the criteria for a video note
         if video.file.size > MAX_VIDEO_SIZE_BYTES {
             info!("Video size exceeds 50 MB, not processing.");
@@ -113,7 +192,9 @@ async fn video_handler(bot: Bot, message: Message) -> Result<(), teloxide::Reque
             return Ok(());
         }
 
+        // if telegram api video_note duration limit is satisfied
         if video.duration <= Seconds::from_seconds(60) {
+            // if width and height are equal, we can send video as video_note directly
             if video.width == video.height {
                 bot.send_message(message.chat.id, "*Подождите\\.\\.\\.*")
                     .parse_mode(ParseMode::MarkdownV2)
@@ -121,41 +202,16 @@ async fn video_handler(bot: Bot, message: Message) -> Result<(), teloxide::Reque
 
                 let download_result = download_video_as_file(&bot, video).await;
 
-                match download_result {
-                    Ok(download_path) => {
-                        info!(
-                            "File downloaded successfully to {}",
-                            download_path.display()
-                        );
-
-                        // Now upload the downloaded file as a video note
-                        let input_file = InputFile::file(&download_path);
-                        bot.send_video_note(message.chat.id, input_file).await?;
-                        info!("Video note sent successfully.");
-
-                        match fs::remove_file(&download_path).await {
-                            Ok(_) => info!("File successfully removed"),
-                            Err(err) => error!("{}", err),
-                        };
-
-                        send_donation_message(bot, message.chat.id).await?;
-                    }
-                    Err(err) => {
-                        error!("Failed to download file: {:?}", err);
-                        bot.send_message(message.chat.id, "*Не удалось обработать файл\\!*")
-                            .parse_mode(ParseMode::MarkdownV2)
-                            .await?;
-                    }
-                }
-            } else {
-                // Handle the case where the aspect ratio is not square
+                return handle_square_video_download(bot, message, download_result).await;
+            }
+            // Handle the case where the aspect ratio is not square
+            else {
                 info!("Video is not square");
 
-                bot.send_message(message.chat.id, "*Видео не квадратное\\!\nВам возможно придётся уменьшить размер видео в редакторе в телеграме*")
+                bot.send_message(message.chat.id, "*Ширина видео не равняется высоте\\!\nВам возможно придётся уменьшить размер видео в редакторе в телеграме*")
                     .reply_parameters(ReplyParameters::new(message.id))
                     .parse_mode(ParseMode::MarkdownV2)
                     .await?;
-
                 bot.send_message(message.chat.id, "*Подождите\\.\\.\\.*")
                     .reply_parameters(ReplyParameters::new(message.id))
                     .parse_mode(ParseMode::MarkdownV2)
@@ -163,52 +219,11 @@ async fn video_handler(bot: Bot, message: Message) -> Result<(), teloxide::Reque
 
                 let download_result = download_video_as_file(&bot, video).await;
 
-                match download_result {
-                    Ok(download_path) => {
-                        info!(
-                            "File downloaded successfully to {}",
-                            download_path.display()
-                        );
-                        // TODO: call ffmpeg function here
-                        match make_square_video(&download_path, VIDEO_NOTE_SIDELENGHT).await {
-                            Ok(square_video_path) => {
-                                info!("Square video path: {}", square_video_path.display());
-
-                                // Now upload the downloaded file as a video note
-                                let input_file = InputFile::file(&square_video_path);
-                                bot.send_video_note(message.chat.id, input_file).await?;
-                                info!("Video note sent successfully.");
-
-                                send_donation_message(bot, message.chat.id).await?;
-
-                                match fs::remove_file(&square_video_path).await {
-                                    Ok(_) => info!("File successfully removed"),
-                                    Err(err) => error!("{}", err),
-                                };
-                            }
-                            Err(err) => {
-                                error!("Failed to create square video: {:?}", err);
-                                bot.send_message(
-                                    message.chat.id,
-                                    "*Ошибка при обработке видео\\!*",
-                                )
-                                .parse_mode(ParseMode::MarkdownV2)
-                                .await?;
-                            }
-                        }
-
-                        return Ok(());
-                    }
-                    Err(err) => {
-                        error!("Error occurred when downloading file: {}", err);
-                        bot.send_message(message.chat.id, "*Ошибка при обработке видео\\!*")
-                            .parse_mode(ParseMode::MarkdownV2)
-                            .await?;
-                    }
-                }
+                return handle_non_square_video_download(bot, message, download_result).await;
             }
-        } else {
-            // Handle the case where the duration is too long
+        }
+        // Handle the case where the duration is longer than max duration supported by telegram api
+        else {
             info!("Video duration exceeds 60 seconds, not sending as video note.");
             bot.send_message(
                 message.chat.id,
@@ -217,6 +232,8 @@ async fn video_handler(bot: Bot, message: Message) -> Result<(), teloxide::Reque
             .reply_parameters(ReplyParameters::new(message.id))
             .parse_mode(ParseMode::MarkdownV2)
             .await?;
+
+            return Ok(());
         }
     }
     Ok(())
